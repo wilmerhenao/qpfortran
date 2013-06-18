@@ -101,7 +101,24 @@ y = 0
 eta = 0.9995
 delta = 3
 mu0 = matmul(transpose(x), z) / n
-tolmu = 1e-5
-tolrs = 1e-5
+tolmu = 1d-5
+tolrs = 1d-5
 kmu = tolmu * mu0
 nQ = norm(Q, inf) + 2
+
+end
+
+! ----------------------- end of qpspecial ---------------------------------
+
+subroutine norminf(m, n, G)
+integer m, n
+double precision G(m, n), normvalue, normvaluetemp
+
+normvalue = 0
+
+do 1100 i = 1, m
+   normvaluetemp = 0d0
+   do 1200 j = 1, n
+      
+   1200  continue
+1100  continue
