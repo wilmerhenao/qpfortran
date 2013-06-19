@@ -117,6 +117,7 @@ do 2122 k = 1, maxit
    r1 = -matmul(Q,x) + matmul(e, y) + z
    r2 = -1d0 + SUM(x)
    r3 = -x*z   ! double check this part
+   rs = norminf(r1)
 2122 continue
 
 end
