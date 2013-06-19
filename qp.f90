@@ -34,8 +34,8 @@
 subroutine qpspecial(m, n, G, maxit)
 implicit none
 integer          m, n, maxit
-double precision G(m, n)
-
+double precision, dimension(m, n) :: G
+double precision, dimension(n, n) :: invC
 
 !  This is a program that finds the solution to the QP problem
 !  []
@@ -70,8 +70,16 @@ double precision G(m, n)
 !                   2 = something went wrong
 !                info(2) = #iterations used
 
-integer echo, idx(n)
-double precision e(n), x(n)
+integer :: echo, info
+double precision, dimension(n) :: e
+double precision, dimension(n) :: x
+double precision, dimension(n) :: work
+integer, dimension(n) :: ipiv
+integer, dimension(n) :: idx
+
+! External procedures defined in lapack
+external DGETRF
+external DGETRI
 
 echo = 0
 
@@ -117,9 +125,40 @@ do 2122 k = 1, maxit
    r1 = -matmul(Q,x) + matmul(e, y) + z
    r2 = -1d0 + SUM(x)
    r3 = -x*z   ! double check this part
-   rs = norminf(r1)
+   rs = MAX(sum(abs(r1)), sum(abs(r2)))
+   mu = -sum(r3)/n
+   if(mu .lt. kmu) then
+      if(rs .lt. krs) then
+         goto 999
+      end if
+   end if
+   zdx = z / x
+   QD = Q
+   QD(idx) = QD(idx) + zdx
+   cholesky_sub(QD)
+   C = QD
+   invC = transpose(C)
+   call DGETRF(n, n, invC, n, ipiv, info)
+   if (0 /= info) then
+      stop 'Matrix is numerically singular!'
+   endif
+   call DGETRI(n, Ainv, n, ipiv, work, n, info)
+   
+   if(0 /= info) then
+      stop 'Matrix inversion failed!'
+   endif
+   
+   KT = matmul(invC, e)
+   M = matmul(KT, KT)
+   
+   r4 = r1 + r3 / x
+   r5 = matmul(transpose(K), matmul(invC, r4))
+   r6 = r2 + r5
+   dy = -r6 / M
+   r7 = r4 + matmul(e, dy)
 2122 continue
 
+999
 end
 
 ! ----------------------- end of qpspecial ---------------------------------
@@ -139,3 +178,31 @@ do 1100 i = 1, m
 1100  continue
       normvalue
 end function norminf
+! ----------------------- end of norminf ------------------------------------
+
+subroutine cholesky_sub(A,n)
+
+implicit none
+
+! formal vars
+integer :: n      ! number of rows/cols in matrix
+real    :: A(n,n) ! matrix to be decomposed
+
+! local vars
+integer :: j      ! iteration counter
+
+! begin loop
+chol: do j = 1,n
+
+! perform diagonal component
+A(j,j) = sqrt(A(j,j) - dot_product(A(j,1:j-1),A(j,1:j-1)))
+
+! perform off-diagonal component
+if (j < n) A(j+1:n,j) = (A(j+1:n,j) - matmul(A(j+1:n,1:j-1),A(j,1:j-1))) / &
+&           A(j,j)
+
+end do chol
+
+end subroutine cholesky_sub
+
+! ------------------------ end of cholesky_sub -----------------------------
