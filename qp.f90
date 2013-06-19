@@ -104,13 +104,26 @@ mu0 = matmul(transpose(x), z) / n
 tolmu = 1d-5
 tolrs = 1d-5
 kmu = tolmu * mu0
-nQ = norm(Q, inf) + 2
+nQ = norminf(Q) + 2
+krs = tolrs * nQ
+ap = 0
+ad = 0
+
+if(echo > 0) then
+   write(*,*) 'k mu stpsz res'
+endif
+
+do 2122 k = 1, maxit
+   r1 = -matmul(Q,x) + matmul(e, y) + z
+   r2 = -1d0 + SUM(x)
+   r3 = -x*z   ! double check this part
+2122 continue
 
 end
 
 ! ----------------------- end of qpspecial ---------------------------------
 
-subroutine norminf(m, n, G)
+function norminf(m, n, G)
 integer m, n
 double precision G(m, n), normvalue, normvaluetemp
 
@@ -119,6 +132,9 @@ normvalue = 0
 do 1100 i = 1, m
    normvaluetemp = 0d0
    do 1200 j = 1, n
-      
+      normvaluetemp = normvaluetemp + abs(G(i, j))
    1200  continue
+      normvalue = max(normvalue, normvaluetemp)
 1100  continue
+      normvalue
+end function norminf
