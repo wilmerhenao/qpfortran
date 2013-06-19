@@ -35,7 +35,7 @@ subroutine qpspecial(m, n, G, maxit)
 implicit none
 integer          m, n, maxit
 double precision, dimension(m, n) :: G
-double precision, dimension(n, n) :: invC
+double precision, dimension(n, n) :: invTrC
 
 !  This is a program that finds the solution to the QP problem
 !  []
@@ -71,9 +71,11 @@ double precision, dimension(n, n) :: invC
 !                info(2) = #iterations used
 
 integer :: echo, info
+double precision :: ptemp, y, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad
 double precision, dimension(n) :: e
-double precision, dimension(n) :: x
+double precision, dimension(n) :: x, z
 double precision, dimension(n) :: work
+double precision, dimension(n, n) :: Q
 integer, dimension(n) :: ipiv
 integer, dimension(n) :: idx
 
@@ -105,21 +107,17 @@ do 2100 i = 1, n
 Q = matmul(transpose(G), G)
 
 z = x
-y = 0
-eta = 0.9995
-delta = 3
-mu0 = matmul(transpose(x), z) / n
+y = 0d0
+eta = 0.9995d0
+delta = 3d0
+mu0 = dot_product(x, z) / n
 tolmu = 1d-5
 tolrs = 1d-5
 kmu = tolmu * mu0
 nQ = norminf(Q) + 2
 krs = tolrs * nQ
-ap = 0
-ad = 0
-
-if(echo > 0) then
-   write(*,*) 'k mu stpsz res'
-endif
+ap = 0d0
+ad = 0d0
 
 do 2122 k = 1, maxit
    r1 = -matmul(Q,x) + matmul(e, y) + z
@@ -137,26 +135,92 @@ do 2122 k = 1, maxit
    QD(idx) = QD(idx) + zdx
    cholesky_sub(QD)
    C = QD
-   invC = transpose(C)
+   invTrC = transpose(C)
+   call DGETRF(n, n, invTrC, n, ipiv, info)
+   if (0 /= info) then
+      stop 'Matrix is numerically singular!'
+   endif
+   
    call DGETRF(n, n, invC, n, ipiv, info)
    if (0 /= info) then
       stop 'Matrix is numerically singular!'
    endif
-   call DGETRI(n, Ainv, n, ipiv, work, n, info)
    
+   call DGETRI(n, invTrC, n, ipiv, work, n, info)
+   if(0 /= info) then
+      stop 'Matrix inversion failed!'
+   endif
+
+   call DGETRI(n, invC, n, ipiv, work, n, info)
    if(0 /= info) then
       stop 'Matrix inversion failed!'
    endif
    
-   KT = matmul(invC, e)
+   KT = matmul(invTrC, e)
    M = matmul(KT, KT)
    
    r4 = r1 + r3 / x
-   r5 = matmul(transpose(K), matmul(invC, r4))
+   r5 = matmul(transpose(K), matmul(invTrC, r4))
    r6 = r2 + r5
    dy = -r6 / M
    r7 = r4 + matmul(e, dy)
+   tempr7 = matmul(invC, matmul(invTrC, r7))
+   dz = (r3 - z * dx) / x
+   p = -x / dx
+   ptemp = 0d0
+   do 2142 i = 1, n
+      if (p(i) .gt. 0d0) then 
+         min(p(i), ptemp)
+      endif
+2142  continue
+   
+   ap = min(ptemp, 1d0)
+   p = -z / dz
+   
+do 2143 i = 1, n
+      if (p(i) .gt. 0d0) then 
+         min(p(i), ptemp)
+      endif
+2143  continue
+   ad = min(ptemp, 1d0)
+   
+   muaff = matmul(transpose(x + ap * dx), (z + ad * dz)) / n
+   sig = (muaff/mu)**delta
+   r3 = r3 + sig * mu
+   r3 = r3 - dx * dz
+   r4 = r1 + r3 / x
+   r5 = matmul(transpose(KT), matmul(invTrC, r4))
+   r6 = r2 + r5
+   dy = -r6/M
+   r7 = r4 + matmul(e, dy)
+   dx = matmul(invC, matmul(invTrC, r7))
+   dz = (r3-z*dx)/x
+
+   p = -x/dx
+   do 2144 i = 1, n
+      if (p(i) .gt. 0d0) then 
+         min(p(i), ptemp)
+      endif
+2144  continue
+   ap = min(ptemp, 1d0)
+   
+   p = -z / dz
+   do 2145 i = 1, n
+      if (p(i) .gt. 0d0) then 
+         min(p(i), ptemp)
+      endif
+2145  continue
+   ad = min(ptemp, 1d0)
+
+   x=x+eta*ap*dx
+   y=y+eta*ad*dy
+   z=z+eta*ad*dz
+   
 2122 continue
+x = max(x, 0d0)
+x = x/sum(x)
+d = matmul(G, x)
+q = matmul(transpose(d),d)
 
 999
 end
