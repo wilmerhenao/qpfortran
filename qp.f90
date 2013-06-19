@@ -70,22 +70,18 @@ double precision, dimension(n, n) :: invTrC
 !                   2 = something went wrong
 !                info(2) = #iterations used
 
-integer :: echo, info
-double precision :: ptemp, y, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad
-double precision, dimension(n) :: e
-double precision, dimension(n) :: x, z
-double precision, dimension(n) :: work
-double precision, dimension(n, n) :: Q
-integer, dimension(n) :: ipiv
-integer, dimension(n) :: idx
+integer          :: echo, info, k
+double precision :: ptemp, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad, M, r2, rs, mu
+double precision :: r5, r6, dy, ptemp, muaff
+double precision, dimension(n)    :: x, y, z, zdx, KT, r1, r3, r4, r7, e, work, dx, dz, p
+double precision, dimension(n, n) :: Q, QD, C, invTrC, invC
+integer, dimension(n) :: ipiv, idx
 
 ! External procedures defined in lapack
 external DGETRF
 external DGETRI
-
 echo = 0
-
-c Check the dimensions
+! Check the dimensions
 
 if (m*n .le. 0) then
    task = 'STOP:  Error in the dimensions of G'
@@ -120,7 +116,7 @@ ap = 0d0
 ad = 0d0
 
 do 2122 k = 1, maxit
-   r1 = -matmul(Q,x) + matmul(e, y) + z
+   r1 = -matmul(Q,x) + e*y + z
    r2 = -1d0 + SUM(x)
    r3 = -x*z   ! double check this part
    rs = MAX(sum(abs(r1)), sum(abs(r2)))
@@ -157,14 +153,14 @@ do 2122 k = 1, maxit
    endif
    
    KT = matmul(invTrC, e)
-   M = matmul(KT, KT)
+   M = dot_product(KT, KT)
    
    r4 = r1 + r3 / x
-   r5 = matmul(transpose(K), matmul(invTrC, r4))
+   r5 = matmul(transpose(KT), matmul(invTrC, r4))
    r6 = r2 + r5
    dy = -r6 / M
-   r7 = r4 + matmul(e, dy)
-   tempr7 = matmul(invC, matmul(invTrC, r7))
+   r7 = r4 + e * dy
+   dx = matmul(invC, matmul(invTrC, r7))
    dz = (r3 - z * dx) / x
    p = -x / dx
    ptemp = 0d0
