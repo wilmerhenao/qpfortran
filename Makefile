@@ -12,4 +12,4 @@ BLAS = -lblas
 all :  qpspecial
 
 qpspecial : $(DRIVER1_90) $(LIBRARY) $(LAPACK) $(BLAS)
-	$(FC) $(FFLAGS) $(DRIVER1_90) $(LIBRARY) $(LAPACK) $(BLAS) -o qpspecial
+	$(FC) -o qpspecial $(FFLAGS) $(DRIVER1_90) $(LIBRARY) -L/usr/local/lib $(LAPACK) $(BLAS)

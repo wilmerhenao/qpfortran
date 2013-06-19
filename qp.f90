@@ -31,11 +31,11 @@
 !                   2 = something went wrong
 !                info(2) = #iterations used
 
-subroutine qpspecial(m, n, G, maxit)
+function qpspecial(m, n, G, maxit)
 implicit none
-integer          m, n, maxit
+integer  ::          m, n, maxit
 double precision, dimension(m, n) :: G
-double precision, dimension(n, n) :: invTrC
+double precision, dimension(n)    :: qpspecial
 
 !  This is a program that finds the solution to the QP problem
 !  []
@@ -70,21 +70,24 @@ double precision, dimension(n, n) :: invTrC
 !                   2 = something went wrong
 !                info(2) = #iterations used
 
-integer          :: echo, info, k
-double precision :: ptemp, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad, M, r2, rs, mu
-double precision :: r5, r6, dy, ptemp, muaff
-double precision, dimension(n)    :: x, y, z, zdx, KT, r1, r3, r4, r7, e, work, dx, dz, p
+integer          :: echo, info, k, i, j
+double precision :: ptemp, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad, Mm, r2, rs, mu, sig, dummy
+double precision :: r5, r6, dy, muaff, y
+double precision, dimension(n)    :: x, z, zdx, KT, r1, r3, r4, r7, e, work, dx, dz, p, d
 double precision, dimension(n, n) :: Q, QD, C, invTrC, invC
-integer, dimension(n) :: ipiv, idx
+integer, dimension(n) :: ipiv
+character        :: uplo
+double precision, external :: DPOTRF 
+external DGETRF, DGETRI
 
+double precision, external :: norminf
+
+uplo = 'U'
 ! External procedures defined in lapack
-external DGETRF
-external DGETRI
+
 echo = 0
 ! Check the dimensions
-
 if (m*n .le. 0) then
-   task = 'STOP:  Error in the dimensions of G'
    write(*,*) 'qpspecial is empty'
 endif
 
@@ -95,10 +98,6 @@ do 1000 i = 1, n
 1000 continue
    
 x = e
-   
-do 2100 i = 1, n
-   idx(i) = (i - 1) * (n + 1) + 1
-2100 continue
       
 Q = matmul(transpose(G), G)
 
@@ -110,7 +109,7 @@ mu0 = dot_product(x, z) / n
 tolmu = 1d-5
 tolrs = 1d-5
 kmu = tolmu * mu0
-nQ = norminf(Q) + 2
+nQ = norminf(m, n, Q) + 2d0
 krs = tolrs * nQ
 ap = 0d0
 ad = 0d0
@@ -119,91 +118,109 @@ do 2122 k = 1, maxit
    r1 = -matmul(Q,x) + e*y + z
    r2 = -1d0 + SUM(x)
    r3 = -x*z   ! double check this part
-   rs = MAX(sum(abs(r1)), sum(abs(r2)))
+   rs = MAX(sum(abs(r1)), abs(r2))
    mu = -sum(r3)/n
    if(mu .lt. kmu) then
       if(rs .lt. krs) then
+         write(*,*) 'converged and jumping out'
          goto 999
       end if
    end if
    zdx = z / x
    QD = Q
-   QD(idx) = QD(idx) + zdx
-   cholesky_sub(QD)
+   do 3000 i = 1, n
+      QD(i,i) = QD(i,i) + zdx(i)
+3000  continue
+   dummy = DPOTRF(uplo, n, QD, n, info)
+   if(0 /= info) then
+      stop 'Matrix is not positive definite'
+   endif
+
+   ! clean the matrix lower part   
+   do 4000 i= 1, n
+      do 4100 j = (i+1), n
+         QD(j,i) = 0d0
+4100  continue
+4000  continue
+
    C = QD
    invTrC = transpose(C)
+   invC = C
+   
    call DGETRF(n, n, invTrC, n, ipiv, info)
    if (0 /= info) then
       stop 'Matrix is numerically singular!'
+   endif
+ 
+   
+   call DGETRI(n, invTrC, n, ipiv, work, n, info)
+   if(0 /= info) then
+      stop 'Matrix inversion failed!'
    endif
    
    call DGETRF(n, n, invC, n, ipiv, info)
    if (0 /= info) then
       stop 'Matrix is numerically singular!'
    endif
-   
-   call DGETRI(n, invTrC, n, ipiv, work, n, info)
-   if(0 /= info) then
-      stop 'Matrix inversion failed!'
-   endif
 
    call DGETRI(n, invC, n, ipiv, work, n, info)
    if(0 /= info) then
       stop 'Matrix inversion failed!'
    endif
-   
    KT = matmul(invTrC, e)
-   M = dot_product(KT, KT)
    
+   Mm = dot_product(KT, KT)
    r4 = r1 + r3 / x
-   r5 = matmul(transpose(KT), matmul(invTrC, r4))
+   r5 = dot_product(KT, matmul(invTrC, r4))
    r6 = r2 + r5
-   dy = -r6 / M
+   dy = -r6 / Mm
    r7 = r4 + e * dy
    dx = matmul(invC, matmul(invTrC, r7))
    dz = (r3 - z * dx) / x
    p = -x / dx
-   ptemp = 0d0
+   ptemp = 1d0
    do 2142 i = 1, n
       if (p(i) .gt. 0d0) then 
-         min(p(i), ptemp)
+         ptemp = min(p(i), ptemp)
       endif
 2142  continue
    
    ap = min(ptemp, 1d0)
+   ptemp = 1d0
    p = -z / dz
-   
 do 2143 i = 1, n
       if (p(i) .gt. 0d0) then 
-         min(p(i), ptemp)
+         ptemp = min(p(i), ptemp)
       endif
 2143  continue
    ad = min(ptemp, 1d0)
-   
-   muaff = matmul(transpose(x + ap * dx), (z + ad * dz)) / n
+   muaff = dot_product((x + ap * dx), (z + ad * dz)) / n
    sig = (muaff/mu)**delta
+
    r3 = r3 + sig * mu
    r3 = r3 - dx * dz
    r4 = r1 + r3 / x
-   r5 = matmul(transpose(KT), matmul(invTrC, r4))
+   r5 = dot_product(KT, matmul(invTrC, r4))
    r6 = r2 + r5
-   dy = -r6/M
-   r7 = r4 + matmul(e, dy)
+   dy = -r6/Mm
+   r7 = r4 + e * dy
    dx = matmul(invC, matmul(invTrC, r7))
    dz = (r3-z*dx)/x
 
    p = -x/dx
+   ptemp = 1d0
    do 2144 i = 1, n
       if (p(i) .gt. 0d0) then 
-         min(p(i), ptemp)
+         ptemp = min(p(i), ptemp)
       endif
 2144  continue
    ap = min(ptemp, 1d0)
    
+   ptemp = 1d0
    p = -z / dz
    do 2145 i = 1, n
       if (p(i) .gt. 0d0) then 
-         min(p(i), ptemp)
+         ptemp = min(p(i), ptemp)
       endif
 2145  continue
    ad = min(ptemp, 1d0)
@@ -211,58 +228,32 @@ do 2143 i = 1, n
    x=x+eta*ap*dx
    y=y+eta*ad*dy
    z=z+eta*ad*dz
-   
+   write(*,*) x
+   write(*,*) y
+   write(*,*) z   
 2122 continue
+999 continue
 x = max(x, 0d0)
 x = x/sum(x)
 d = matmul(G, x)
-q = matmul(transpose(d),d)
-
-999
-end
+q = dot_product(d,d)
+qpspecial = x
+write(*,*) 'done'
+end function qpspecial
 
 ! ----------------------- end of qpspecial ---------------------------------
 
-function norminf(m, n, G)
-integer m, n
+function norminf(m, n, G) result(normvalue)
 double precision G(m, n), normvalue, normvaluetemp
-
-normvalue = 0
+integer :: m, n
+normvalue = 0d0
 
 do 1100 i = 1, m
    normvaluetemp = 0d0
    do 1200 j = 1, n
       normvaluetemp = normvaluetemp + abs(G(i, j))
    1200  continue
-      normvalue = max(normvalue, normvaluetemp)
+   normvalue = max(normvalue, normvaluetemp)
 1100  continue
-      normvalue
 end function norminf
 ! ----------------------- end of norminf ------------------------------------
-
-subroutine cholesky_sub(A,n)
-
-implicit none
-
-! formal vars
-integer :: n      ! number of rows/cols in matrix
-real    :: A(n,n) ! matrix to be decomposed
-
-! local vars
-integer :: j      ! iteration counter
-
-! begin loop
-chol: do j = 1,n
-
-! perform diagonal component
-A(j,j) = sqrt(A(j,j) - dot_product(A(j,1:j-1),A(j,1:j-1)))
-
-! perform off-diagonal component
-if (j < n) A(j+1:n,j) = (A(j+1:n,j) - matmul(A(j+1:n,1:j-1),A(j,1:j-1))) / &
-&           A(j,j)
-
-end do chol
-
-end subroutine cholesky_sub
-
-! ------------------------ end of cholesky_sub -----------------------------
