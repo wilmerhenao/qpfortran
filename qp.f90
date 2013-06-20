@@ -31,11 +31,11 @@
 !                   2 = something went wrong
 !                info(2) = #iterations used
 
-function qpspecial(m, n, G, maxit)
+subroutine qpspecial(m, n, G, maxit)
 implicit none
 integer  ::          m, n, maxit
 double precision, dimension(m, n) :: G
-double precision, dimension(n)    :: qpspecial
+!double precision, dimension(n)    :: qpspecial
 
 !  This is a program that finds the solution to the QP problem
 !  []
@@ -73,8 +73,10 @@ double precision, dimension(n)    :: qpspecial
 integer          :: echo, info, k, i, j
 double precision :: ptemp, eta, delta, mu0, tolmu, tolrs, kmu, nQ, krs, ap, ad, Mm, r2, rs, mu, sig, dummy
 double precision :: r5, r6, dy, muaff, y
-double precision, dimension(n)    :: x, z, zdx, KT, r1, r3, r4, r7, e, work, dx, dz, p, d
+double precision, dimension(n)    :: x, z, zdx, KT, r1, r3, r4, r7, e, work, dx, dz, p
+double precision, dimension(m)    :: d
 double precision, dimension(n, n) :: Q, QD, C, invTrC, invC
+
 integer, dimension(n) :: ipiv
 character        :: uplo
 double precision, external :: DPOTRF 
@@ -98,28 +100,31 @@ do 1000 i = 1, n
 1000 continue
    
 x = e
-      
+
+! Hessian in QP
 Q = matmul(transpose(G), G)
 
 z = x
 y = 0d0
-eta = 0.9995d0
-delta = 3d0
+eta = 0.9995d0 ! step size dampening
+delta = 3d0    ! for the sigma heuristic
 mu0 = dot_product(x, z) / n
+! constants for stopping, residuals, init steps.
 tolmu = 1d-5
 tolrs = 1d-5
 kmu = tolmu * mu0
-nQ = norminf(m, n, Q) + 2d0
+nQ = norminf(n, Q) + 2d0
 krs = tolrs * nQ
 ap = 0d0
 ad = 0d0
 
 do 2122 k = 1, maxit
+   ! residuals
    r1 = -matmul(Q,x) + e*y + z
    r2 = -1d0 + SUM(x)
-   r3 = -x*z   ! double check this part
+   r3 = -x*z   ! slacks
    rs = MAX(sum(abs(r1)), abs(r2))
-   mu = -sum(r3)/n
+   mu = -sum(r3)/n ! current mu
    if(mu .lt. kmu) then
       if(rs .lt. krs) then
          write(*,*) 'converged and jumping out'
@@ -170,6 +175,7 @@ do 2122 k = 1, maxit
    KT = matmul(invTrC, e)
    
    Mm = dot_product(KT, KT)
+   ! compute approx. tangent direction using factorization from above
    r4 = r1 + r3 / x
    r5 = dot_product(KT, matmul(invTrC, r4))
    r6 = r2 + r5
@@ -177,6 +183,7 @@ do 2122 k = 1, maxit
    r7 = r4 + e * dy
    dx = matmul(invC, matmul(invTrC, r7))
    dz = (r3 - z * dx) / x
+   ! determine maximal step possible in the approx. tangent directions
    p = -x / dx
    ptemp = 1d0
    do 2142 i = 1, n
@@ -184,7 +191,7 @@ do 2122 k = 1, maxit
          ptemp = min(p(i), ptemp)
       endif
 2142  continue
-   
+   ! and here the dual step size using diff. steps in primal and dual improves pfmnce a bit
    ap = min(ptemp, 1d0)
    ptemp = 1d0
    p = -z / dz
@@ -224,31 +231,27 @@ do 2143 i = 1, n
       endif
 2145  continue
    ad = min(ptemp, 1d0)
-
+   ! update variables,  primal, dual multipliers, dual slacks
    x=x+eta*ap*dx
    y=y+eta*ad*dy
    z=z+eta*ad*dz
-   write(*,*) x
-   write(*,*) y
-   write(*,*) z   
 2122 continue
 999 continue
 x = max(x, 0d0)
 x = x/sum(x)
 d = matmul(G, x)
 q = dot_product(d,d)
-qpspecial = x
+write(*, *) x
 write(*,*) 'done'
-end function qpspecial
-
+end 
 ! ----------------------- end of qpspecial ---------------------------------
 
-function norminf(m, n, G) result(normvalue)
-double precision G(m, n), normvalue, normvaluetemp
-integer :: m, n
+function norminf(n, G) result(normvalue)
+double precision G(n, n), normvalue, normvaluetemp
+integer :: n
 normvalue = 0d0
 
-do 1100 i = 1, m
+do 1100 i = 1, n
    normvaluetemp = 0d0
    do 1200 j = 1, n
       normvaluetemp = normvaluetemp + abs(G(i, j))

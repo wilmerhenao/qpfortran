@@ -1,9 +1,6 @@
 program driver
   implicit none
   double precision, dimension(4, 3) :: G
-  double precision, dimension(3) :: myx
-  integer function qpspecial(m, n, G, maxit)
-
 
 G(1, 1) = 1d0 
 G(1, 2) = 2d0
@@ -18,6 +15,6 @@ G(4, 1) = 2.2d0
 G(4, 2) = -3.1d0
 G(4, 3) = 0.5d0
 
-myx = qpspecial(4, 3, G, 100)
+call qpspecial(4, 3, G, 100)
 
 end program driver
